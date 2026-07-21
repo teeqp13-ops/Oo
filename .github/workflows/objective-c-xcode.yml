@@ -1,30 +1,115 @@
-name: Xcode - Build and Analyze
+name: Build BYANO Tweak
 
 on:
+  workflow_dispatch:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  THEOS: ${{ github.workspace }}/theos
+  API_BASE: https://key.p3nd.fun/api
 
 jobs:
+  verify-api:
+    name: Verify activation API
+    runs-on: ubuntu-24.04
+    outputs:
+      api_ok: ${{ steps.health.outputs.api_ok }}
+    steps:
+      - name: Check API health
+        id: health
+        shell: bash
+        env:
+          GPSQ_API_KEY: ${{ secrets.GPSQ_API_KEY }}
+        run: |
+          set -Eeuo pipefail
+          test -n "$GPSQ_API_KEY" || { echo 'GPSQ_API_KEY secret is missing' >&2; exit 1; }
+          encoded_key="$(python3 -c 'import os,urllib.parse; print(urllib.parse.quote(os.environ["GPSQ_API_KEY"], safe=""))')"
+          response_file="$(mktemp)"
+          status="$(curl --silent --show-error --location --connect-timeout 15 --max-time 30 \
+            --output "$response_file" --write-out '%{http_code}' \
+            --header "X-API-Key: $GPSQ_API_KEY" \
+            --header "Authorization: Bearer $GPSQ_API_KEY" \
+            "$API_BASE/health.php?app=$encoded_key")"
+          cat "$response_file"
+          echo
+          if [[ "$status" =~ ^2 ]]; then
+            echo 'api_ok=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "API health check failed with HTTP $status" >&2
+            exit 1
+          fi
+
   build:
-    name: Build and analyse default scheme using xcodebuild command
-    runs-on: macos-latest
+    name: Build rootless DEB
+    needs: verify-api
+    if: needs.verify-api.outputs.api_ok == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Set Default Scheme
+
+      - name: Install dependencies
         run: |
-          scheme_list=$(xcodebuild -list -json | tr -d "\n")
-          default=$(echo $scheme_list | ruby -e "require 'json'; puts JSON.parse(STDIN.gets)['project']['targets'][0]")
-          echo $default | cat >default
-          echo Using default scheme: $default
-      - name: Build
-        env:
-          scheme: ${{ 'default' }}
+          sudo apt-get update
+          sudo apt-get install -y bash curl git make perl python3 build-essential fakeroot dpkg-dev xz-utils unzip libplist-utils file
+
+      - name: Install Theos
+        shell: bash
         run: |
-          if [ $scheme = default ]; then scheme=$(cat default); fi
-          if [ "`ls -A | grep -i \\.xcworkspace\$`" ]; then filetype_parameter="workspace" && file_to_build="`ls -A | grep -i \\.xcworkspace\$`"; else filetype_parameter="project" && file_to_build="`ls -A | grep -i \\.xcodeproj\$`"; fi
-          file_to_build=`echo $file_to_build | awk '{$1=$1;print}'`
-          xcodebuild clean build analyze -scheme "$scheme" -"$filetype_parameter" "$file_to_build" | xcpretty && exit ${PIPESTATUS[0]}
+          set -Eeuo pipefail
+          rm -rf "$THEOS"
+          bash -c "$(curl -fsSL https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)"
+          test -x "$THEOS/toolchain/linux/iphone/bin/clang"
+          test -n "$(find "$THEOS/sdks" -maxdepth 1 -type d -name '*.sdk' -print -quit)"
+
+      - name: Validate sources
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for file in Makefile control Tweak.x BYANOMenuViewController.h BYANOMenuViewController.m; do
+            test -f "$file" || { echo "Missing file: $file" >&2; exit 1; }
+          done
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          rm -rf .theos obj packages artifacts
+          mkdir -p artifacts/dylibs artifacts/logs
+          set +e
+          make clean package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless messages=yes -j1 2>&1 | tee artifacts/logs/build.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ]; then
+            grep -nE 'error:|fatal error:|Undefined symbols|duplicate symbol|ld:|make.*\*\*\*' artifacts/logs/build.log >&2 || true
+            exit "$status"
+          fi
+
+      - name: Collect artifacts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          find packages -type f -name '*.deb' -exec cp -f {} artifacts/ \;
+          find .theos -type f -name '*.dylib' -exec cp -f {} artifacts/dylibs/ \;
+          test -n "$(find artifacts -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$(find artifacts/dylibs -type f -name '*.dylib' -print -quit)"
+          find artifacts -type f \( -name '*.deb' -o -name '*.dylib' \) -print0 | sort -z | xargs -0 sha256sum > artifacts/SHA256SUMS.txt
+          printf 'status=success\napi_base=%s\n' "$API_BASE" > artifacts/BUILD_RESULT.txt
+          find artifacts -maxdepth 2 -type f -print
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BYANO-${{ github.run_number }}
+          path: artifacts/**
+          if-no-files-found: warn
+          retention-days: 30
