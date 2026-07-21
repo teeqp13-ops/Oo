@@ -10,7 +10,7 @@ TWEAK_NAME := BYANOTweak
 
 BYANOTweak_FILES := Tweak.x BYANOMenuViewController.m
 BYANOTweak_FRAMEWORKS := UIKit Foundation CoreGraphics
-BYANOTweak_CFLAGS := -fobjc-arc -Wall -Wextra -Wno-unused-parameter
+BYANOTweak_CFLAGS := -fobjc-arc -Wall -Wextra -Wno-error -Wno-unused-parameter -Wno-deprecated-declarations
 BYANOTweak_LDFLAGS := -Wl,-dead_strip
 
 include $(THEOS_MAKE_PATH)/tweak.mk
