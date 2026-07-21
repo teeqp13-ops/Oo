@@ -105,17 +105,25 @@
     return identifier.length > 0 ? identifier : @"unknown-device";
 }
 
-- (NSURL *)activationURLForCode:(NSString *)code {
-    NSURLComponents *components = [NSURLComponents componentsWithString:[NSString stringWithFormat:@"%@/%@", BYANO_API_BASE_URL, BYANO_SETTINGS_ENDPOINT]];
-    components.queryItems = @[
-        [NSURLQueryItem queryItemWithName:@"app" value:code],
-        [NSURLQueryItem queryItemWithName:@"code" value:code],
-        [NSURLQueryItem queryItemWithName:@"device_id" value:[self deviceIdentifier]],
-        [NSURLQueryItem queryItemWithName:@"device_uuid" value:[self deviceIdentifier]],
-        [NSURLQueryItem queryItemWithName:@"bundle_id" value:NSBundle.mainBundle.bundleIdentifier ?: @"unknown"],
-        [NSURLQueryItem queryItemWithName:@"app_version" value:[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"1.0"]
-    ];
-    return components.URL;
+- (NSURL *)activationURL {
+    NSString *urlString = [NSString stringWithFormat:@"%@/%@", BYANO_API_BASE_URL, BYANO_ACTIVATION_ENDPOINT];
+    return [NSURL URLWithString:urlString];
+}
+
+- (NSDictionary *)activationPayloadForCode:(NSString *)code {
+    NSString *deviceID = [self deviceIdentifier];
+    NSString *bundleID = NSBundle.mainBundle.bundleIdentifier ?: @"unknown";
+    NSString *appVersion = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"1.0";
+
+    return @{
+        @"code": code,
+        @"app": code,
+        @"device_id": deviceID,
+        @"device_uuid": deviceID,
+        @"bundle_id": bundleID,
+        @"app_version": appVersion,
+        @"timestamp": @((NSInteger)[NSDate date].timeIntervalSince1970)
+    };
 }
 
 - (void)setLoading:(BOOL)loading message:(NSString *)message {
@@ -132,17 +140,26 @@
         return;
     }
 
-    NSURL *url = [self activationURLForCode:apiKey];
+    NSURL *url = [self activationURL];
     if (!url) {
         self.statusLabel.text = @"تعذر تكوين رابط الخادم";
+        return;
+    }
+
+    NSError *bodyError = nil;
+    NSData *body = [NSJSONSerialization dataWithJSONObject:[self activationPayloadForCode:apiKey] options:0 error:&bodyError];
+    if (!body || bodyError) {
+        self.statusLabel.text = @"تعذر تجهيز طلب التفعيل";
         return;
     }
 
     [self setLoading:YES message:@"جاري التحقق من الكود..."];
 
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"GET";
+    request.HTTPMethod = @"POST";
     request.timeoutInterval = 25;
+    request.HTTPBody = body;
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
     [request setValue:apiKey forHTTPHeaderField:@"X-API-Key"];
     [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
@@ -163,7 +180,11 @@
 
             BOOL success = NO;
             if ([json isKindOfClass:NSDictionary.class]) {
-                success = [json[@"success"] boolValue] || [json[@"active"] boolValue] || [json[@"valid"] boolValue] || [json[@"status"] isEqual:@"active"];
+                success = [json[@"success"] boolValue] ||
+                          [json[@"active"] boolValue] ||
+                          [json[@"valid"] boolValue] ||
+                          [json[@"status"] isEqual:@"active"] ||
+                          [json[@"status"] isEqual:@"success"];
             }
 
             if (httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 && success) {
