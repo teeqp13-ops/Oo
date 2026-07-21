@@ -74,10 +74,10 @@
     NSArray<NSString *> *titles = @[@"GPS Spoofing", @"Device ID Spoofing", @"Bluetooth Spoofing", @"JSON Hooking"];
     NSMutableArray<UISwitch *> *switches = [NSMutableArray array];
 
-    for (NSInteger index = 0; index < titles.count; index++) {
+    for (NSInteger index = 0; index < (NSInteger)titles.count; index++) {
         CGFloat y = 320 + (index * 52);
         UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 220, 32)];
-        label.text = titles[index];
+        label.text = titles[(NSUInteger)index];
         label.textColor = UIColor.whiteColor;
         [self.view addSubview:label];
 
@@ -101,7 +101,8 @@
 }
 
 - (NSString *)deviceIdentifier {
-    NSString *identifier = UIDevice.currentDevice.identifierForVendor.UUIDString;
+    NSUUID *vendorIdentifier = [[UIDevice currentDevice] identifierForVendor];
+    NSString *identifier = [vendorIdentifier UUIDString];
     return identifier.length > 0 ? identifier : @"unknown-device";
 }
 
@@ -112,8 +113,8 @@
 
 - (NSDictionary *)activationPayloadForCode:(NSString *)code {
     NSString *deviceID = [self deviceIdentifier];
-    NSString *bundleID = NSBundle.mainBundle.bundleIdentifier ?: @"unknown";
-    NSString *appVersion = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"1.0";
+    NSString *bundleID = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
+    NSString *appVersion = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"1.0";
 
     return @{
         @"code": code,
@@ -122,7 +123,7 @@
         @"device_uuid": deviceID,
         @"bundle_id": bundleID,
         @"app_version": appVersion,
-        @"timestamp": @((NSInteger)[NSDate date].timeIntervalSince1970)
+        @"timestamp": @((NSInteger)[[NSDate date] timeIntervalSince1970])
     };
 }
 
@@ -130,25 +131,29 @@
     self.activateButton.enabled = !loading;
     self.keyTextField.enabled = !loading;
     self.statusLabel.text = message;
-    loading ? [self.loadingView startAnimating] : [self.loadingView stopAnimating];
+    if (loading) {
+        [self.loadingView startAnimating];
+    } else {
+        [self.loadingView stopAnimating];
+    }
 }
 
 - (void)activateKeyTapped {
-    NSString *apiKey = [self.keyTextField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *apiKey = [self.keyTextField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (apiKey.length == 0) {
         self.statusLabel.text = @"يرجى إدخال كود التفعيل";
         return;
     }
 
     NSURL *url = [self activationURL];
-    if (!url) {
+    if (url == nil) {
         self.statusLabel.text = @"تعذر تكوين رابط الخادم";
         return;
     }
 
     NSError *bodyError = nil;
     NSData *body = [NSJSONSerialization dataWithJSONObject:[self activationPayloadForCode:apiKey] options:0 error:&bodyError];
-    if (!body || bodyError) {
+    if (body == nil || bodyError != nil) {
         self.statusLabel.text = @"تعذر تجهيز طلب التفعيل";
         return;
     }
@@ -169,27 +174,31 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             [self setLoading:NO message:nil];
 
-            if (error) {
+            if (error != nil) {
                 self.statusLabel.text = [NSString stringWithFormat:@"تعذر الاتصال: %@", error.localizedDescription];
                 return;
             }
 
-            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+            NSHTTPURLResponse *httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
             NSError *jsonError = nil;
-            NSDictionary *json = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError] : nil;
+            id jsonObject = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError] : nil;
 
-            BOOL success = NO;
-            if ([json isKindOfClass:NSDictionary.class]) {
-                success = [json[@"success"] boolValue] ||
-                          [json[@"active"] boolValue] ||
-                          [json[@"valid"] boolValue] ||
-                          [json[@"status"] isEqual:@"active"] ||
-                          [json[@"status"] isEqual:@"success"];
+            if (jsonError != nil) {
+                self.statusLabel.text = @"استجابة الخادم ليست JSON صحيحة";
+                self.statusLabel.textColor = [UIColor colorWithRed:1 green:0.35 blue:0.35 alpha:1.0];
+                return;
             }
 
-            if (httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 && success) {
+            NSDictionary *json = [jsonObject isKindOfClass:[NSDictionary class]] ? (NSDictionary *)jsonObject : nil;
+            BOOL success = [json[@"success"] boolValue] ||
+                           [json[@"active"] boolValue] ||
+                           [json[@"valid"] boolValue] ||
+                           [json[@"status"] isEqual:@"active"] ||
+                           [json[@"status"] isEqual:@"success"];
+
+            NSInteger statusCode = httpResponse != nil ? httpResponse.statusCode : 0;
+            if (statusCode >= 200 && statusCode < 300 && success) {
                 [[NSUserDefaults standardUserDefaults] setObject:apiKey forKey:BYANO_ACTIVATION_STORAGE_KEY];
-                [[NSUserDefaults standardUserDefaults] synchronize];
                 self.statusLabel.text = json[@"message"] ?: @"تم تفعيل الكود بنجاح";
                 self.statusLabel.textColor = [UIColor colorWithRed:0.25 green:0.9 blue:0.5 alpha:1.0];
                 self.gpsSpoofSwitch.enabled = YES;
@@ -198,13 +207,13 @@
                 self.jsonHookSwitch.enabled = YES;
                 self.hideMenuButton.enabled = YES;
 
-                if (json[@"gps_enabled"]) self.gpsSpoofSwitch.on = [json[@"gps_enabled"] boolValue];
-                if (json[@"device_id_enabled"]) self.deviceIDSpoofSwitch.on = [json[@"device_id_enabled"] boolValue];
-                if (json[@"bluetooth_enabled"]) self.bluetoothSpoofSwitch.on = [json[@"bluetooth_enabled"] boolValue];
-                if (json[@"json_enabled"]) self.jsonHookSwitch.on = [json[@"json_enabled"] boolValue];
+                if (json[@"gps_enabled"] != nil) self.gpsSpoofSwitch.on = [json[@"gps_enabled"] boolValue];
+                if (json[@"device_id_enabled"] != nil) self.deviceIDSpoofSwitch.on = [json[@"device_id_enabled"] boolValue];
+                if (json[@"bluetooth_enabled"] != nil) self.bluetoothSpoofSwitch.on = [json[@"bluetooth_enabled"] boolValue];
+                if (json[@"json_enabled"] != nil) self.jsonHookSwitch.on = [json[@"json_enabled"] boolValue];
             } else {
-                NSString *message = [json isKindOfClass:NSDictionary.class] ? json[@"message"] : nil;
-                self.statusLabel.text = message ?: [NSString stringWithFormat:@"فشل التفعيل (HTTP %ld)", (long)httpResponse.statusCode];
+                NSString *message = [json[@"message"] isKindOfClass:[NSString class]] ? json[@"message"] : nil;
+                self.statusLabel.text = message ?: [NSString stringWithFormat:@"فشل التفعيل (HTTP %ld)", (long)statusCode];
                 self.statusLabel.textColor = [UIColor colorWithRed:1 green:0.35 blue:0.35 alpha:1.0];
             }
         });
