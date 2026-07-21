@@ -1,8 +1,12 @@
 #import "BYANOMenuViewController.h"
+#import "ActivationConfig.h"
+#import <UIKit/UIKit.h>
 
 @interface BYANOMenuViewController ()
 @property (nonatomic, strong) UITextField *keyTextField;
 @property (nonatomic, strong) UIButton *activateButton;
+@property (nonatomic, strong) UILabel *statusLabel;
+@property (nonatomic, strong) UIActivityIndicatorView *loadingView;
 @property (nonatomic, strong) UISwitch *gpsSpoofSwitch;
 @property (nonatomic, strong) UISwitch *deviceIDSpoofSwitch;
 @property (nonatomic, strong) UISwitch *bluetoothSpoofSwitch;
@@ -14,130 +18,180 @@
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor whiteColor];
-    
-    // Setup Key Text Field
-    self.keyTextField = [[UITextField alloc] initWithFrame:CGRectMake(20, 100, self.view.frame.size.width - 40, 40)];
-    self.keyTextField.placeholder = @"Enter wf_live_ key";
-    self.keyTextField.borderStyle = UITextBorderStyleRoundedRect;
+    self.modalInPresentation = YES;
+    self.view.backgroundColor = [UIColor colorWithRed:0.04 green:0.06 blue:0.12 alpha:1.0];
+
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 55, self.view.bounds.size.width - 40, 40)];
+    titleLabel.text = @"تفعيل BYANO";
+    titleLabel.textColor = UIColor.whiteColor;
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    titleLabel.font = [UIFont boldSystemFontOfSize:26];
+    [self.view addSubview:titleLabel];
+
+    self.keyTextField = [[UITextField alloc] initWithFrame:CGRectMake(20, 115, self.view.bounds.size.width - 40, 48)];
+    self.keyTextField.placeholder = @"أدخل كود التفعيل";
+    self.keyTextField.textAlignment = NSTextAlignmentCenter;
+    self.keyTextField.autocorrectionType = UITextAutocorrectionTypeNo;
+    self.keyTextField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    self.keyTextField.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
+    self.keyTextField.textColor = UIColor.whiteColor;
+    self.keyTextField.layer.cornerRadius = 12;
+    self.keyTextField.clipsToBounds = YES;
+    self.keyTextField.attributedPlaceholder = [[NSAttributedString alloc] initWithString:@"أدخل كود التفعيل" attributes:@{NSForegroundColorAttributeName:[UIColor colorWithWhite:1 alpha:0.45]}];
     [self.view addSubview:self.keyTextField];
-    
-    // Setup Activate Button
+
     self.activateButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.activateButton.frame = CGRectMake(20, 150, self.view.frame.size.width - 40, 40);
-    [self.activateButton setTitle:@"Activate Key" forState:UIControlStateNormal];
+    self.activateButton.frame = CGRectMake(20, 176, self.view.bounds.size.width - 40, 48);
+    self.activateButton.backgroundColor = [UIColor colorWithRed:0.10 green:0.45 blue:0.95 alpha:1.0];
+    self.activateButton.layer.cornerRadius = 12;
+    [self.activateButton setTitle:@"تفعيل الكود" forState:UIControlStateNormal];
+    [self.activateButton setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+    self.activateButton.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [self.activateButton addTarget:self action:@selector(activateKeyTapped) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:self.activateButton];
-    
-    // Setup GPS Spoof Switch
-    UILabel *gpsLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 200, 200, 30)];
-    gpsLabel.text = @"GPS Spoofing";
-    [self.view addSubview:gpsLabel];
-    self.gpsSpoofSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(self.view.frame.size.width - 70, 200, 0, 0)];
-    [self.view addSubview:self.gpsSpoofSwitch];
-    
-    // Setup Device ID Spoof Switch
-    UILabel *deviceIDLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 250, 200, 30)];
-    deviceIDLabel.text = @"Device ID Spoofing";
-    [self.view addSubview:deviceIDLabel];
-    self.deviceIDSpoofSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(self.view.frame.size.width - 70, 250, 0, 0)];
-    [self.view addSubview:self.deviceIDSpoofSwitch];
-    
-    // Setup Bluetooth Spoof Switch
-    UILabel *bluetoothLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 300, 200, 30)];
-    bluetoothLabel.text = @"Bluetooth Spoofing";
-    [self.view addSubview:bluetoothLabel];
-    self.bluetoothSpoofSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(self.view.frame.size.width - 70, 300, 0, 0)];
-    [self.view addSubview:self.bluetoothSpoofSwitch];
-    
-    // Setup JSON Hook Switch
-    UILabel *jsonHookLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 350, 200, 30)];
-    jsonHookLabel.text = @"JSON Hooking";
-    [self.view addSubview:jsonHookLabel];
-    self.jsonHookSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(self.view.frame.size.width - 70, 350, 0, 0)];
-    [self.view addSubview:self.jsonHookSwitch];
-    
-    // Setup Hide Menu Button
+
+    self.loadingView = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
+    self.loadingView.center = CGPointMake(self.view.bounds.size.width / 2.0, 247);
+    self.loadingView.hidesWhenStopped = YES;
+    [self.view addSubview:self.loadingView];
+
+    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 262, self.view.bounds.size.width - 40, 42)];
+    self.statusLabel.textAlignment = NSTextAlignmentCenter;
+    self.statusLabel.numberOfLines = 2;
+    self.statusLabel.textColor = [UIColor colorWithWhite:1 alpha:0.7];
+    self.statusLabel.font = [UIFont systemFontOfSize:14];
+    [self.view addSubview:self.statusLabel];
+
+    [self setupFeatureControls];
+
+    NSString *savedCode = [[NSUserDefaults standardUserDefaults] stringForKey:BYANO_ACTIVATION_STORAGE_KEY];
+    if (savedCode.length > 0) {
+        self.keyTextField.text = savedCode;
+    }
+}
+
+- (void)setupFeatureControls {
+    NSArray<NSString *> *titles = @[@"GPS Spoofing", @"Device ID Spoofing", @"Bluetooth Spoofing", @"JSON Hooking"];
+    NSMutableArray<UISwitch *> *switches = [NSMutableArray array];
+
+    for (NSInteger index = 0; index < titles.count; index++) {
+        CGFloat y = 320 + (index * 52);
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(20, y, 220, 32)];
+        label.text = titles[index];
+        label.textColor = UIColor.whiteColor;
+        [self.view addSubview:label];
+
+        UISwitch *toggle = [[UISwitch alloc] initWithFrame:CGRectMake(self.view.bounds.size.width - 72, y, 52, 32)];
+        toggle.enabled = NO;
+        [self.view addSubview:toggle];
+        [switches addObject:toggle];
+    }
+
+    self.gpsSpoofSwitch = switches[0];
+    self.deviceIDSpoofSwitch = switches[1];
+    self.bluetoothSpoofSwitch = switches[2];
+    self.jsonHookSwitch = switches[3];
+
     self.hideMenuButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    self.hideMenuButton.frame = CGRectMake(20, 400, self.view.frame.size.width - 40, 40);
-    [self.hideMenuButton setTitle:@"Hide Menu" forState:UIControlStateNormal];
+    self.hideMenuButton.frame = CGRectMake(20, 540, self.view.bounds.size.width - 40, 44);
+    [self.hideMenuButton setTitle:@"إخفاء القائمة" forState:UIControlStateNormal];
     [self.hideMenuButton addTarget:self action:@selector(hideMenuTapped) forControlEvents:UIControlEventTouchUpInside];
+    self.hideMenuButton.enabled = NO;
     [self.view addSubview:self.hideMenuButton];
 }
 
+- (NSString *)deviceIdentifier {
+    NSString *identifier = UIDevice.currentDevice.identifierForVendor.UUIDString;
+    return identifier.length > 0 ? identifier : @"unknown-device";
+}
+
+- (NSURL *)activationURLForCode:(NSString *)code {
+    NSURLComponents *components = [NSURLComponents componentsWithString:[NSString stringWithFormat:@"%@/%@", BYANO_API_BASE_URL, BYANO_SETTINGS_ENDPOINT]];
+    components.queryItems = @[
+        [NSURLQueryItem queryItemWithName:@"app" value:code],
+        [NSURLQueryItem queryItemWithName:@"code" value:code],
+        [NSURLQueryItem queryItemWithName:@"device_id" value:[self deviceIdentifier]],
+        [NSURLQueryItem queryItemWithName:@"device_uuid" value:[self deviceIdentifier]],
+        [NSURLQueryItem queryItemWithName:@"bundle_id" value:NSBundle.mainBundle.bundleIdentifier ?: @"unknown"],
+        [NSURLQueryItem queryItemWithName:@"app_version" value:[NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"1.0"]
+    ];
+    return components.URL;
+}
+
+- (void)setLoading:(BOOL)loading message:(NSString *)message {
+    self.activateButton.enabled = !loading;
+    self.keyTextField.enabled = !loading;
+    self.statusLabel.text = message;
+    loading ? [self.loadingView startAnimating] : [self.loadingView stopAnimating];
+}
+
 - (void)activateKeyTapped {
-    NSString *apiKey = self.keyTextField.text;
+    NSString *apiKey = [self.keyTextField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (apiKey.length == 0) {
-        NSLog(@"API Key is empty");
+        self.statusLabel.text = @"يرجى إدخال كود التفعيل";
         return;
     }
 
-    NSString *urlString = [NSString stringWithFormat:@"https://key.p3nd.fun/api/settings.php?app=%@", apiKey];
-    NSURL *url = [NSURL URLWithString:urlString];
+    NSURL *url = [self activationURLForCode:apiKey];
+    if (!url) {
+        self.statusLabel.text = @"تعذر تكوين رابط الخادم";
+        return;
+    }
+
+    [self setLoading:YES message:@"جاري التحقق من الكود..."];
+
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"GET";
-    
-    // Attempt to send the key in a custom header, as it's common for API keys
+    request.timeoutInterval = 25;
+    [request setValue:@"application/json" forHTTPHeaderField:@"Accept"];
     [request setValue:apiKey forHTTPHeaderField:@"X-API-Key"];
-    // Also try to send it as a Bearer token, another common method
     [request setValue:[NSString stringWithFormat:@"Bearer %@", apiKey] forHTTPHeaderField:@"Authorization"];
+    [request setValue:[self deviceIdentifier] forHTTPHeaderField:@"X-Device-ID"];
 
-    NSURLSession *session = [NSURLSession sharedSession];
-    NSURLSessionDataTask *dataTask = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) {
-            NSLog(@"API Request Error: %@", error.localizedDescription);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                // Update UI on main thread
-                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error" message:[NSString stringWithFormat:@"API Request Failed: %@", error.localizedDescription] preferredStyle:UIAlertControllerStyleAlert];
-                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                [self presentViewController:alert animated:YES completion:nil];
-            });
-            return;
-        }
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self setLoading:NO message:nil];
 
-        NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
-        if (httpResponse.statusCode == 200) {
-            // Success, parse JSON response
-            NSError *jsonError = nil;
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
-            if (jsonError) {
-                NSLog(@"JSON Parsing Error: %@", jsonError.localizedDescription);
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Error" message:[NSString stringWithFormat:@"JSON Parsing Failed: %@", jsonError.localizedDescription] preferredStyle:UIAlertControllerStyleAlert];
-                    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                    [self presentViewController:alert animated:YES completion:nil];
-                });
+            if (error) {
+                self.statusLabel.text = [NSString stringWithFormat:@"تعذر الاتصال: %@", error.localizedDescription];
                 return;
             }
-            NSLog(@"API Response: %@", json);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                // Update UI based on API response (e.g., enable/disable switches)
-                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Success" message:@"API Key Activated!" preferredStyle:UIAlertControllerStyleAlert];
-                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                [self presentViewController:alert animated:YES completion:nil];
-                
-                // Example: If API returns a 'gps_enabled' flag
-                if (json[@"gps_enabled"]) {
-                    self.gpsSpoofSwitch.on = [json[@"gps_enabled"] boolValue];
-                }
-                // ... similar logic for other switches
-            });
-        } else {
-            // API returned an error status code
-            NSString *responseString = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-            NSLog(@"API Error - Status Code: %ld, Response: %@", (long)httpResponse.statusCode, responseString);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"API Error" message:[NSString stringWithFormat:@"Status Code: %ld\nResponse: %@", (long)httpResponse.statusCode, responseString] preferredStyle:UIAlertControllerStyleAlert];
-                [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                [self presentViewController:alert animated:YES completion:nil];
-            });
-        }
+
+            NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
+            NSError *jsonError = nil;
+            NSDictionary *json = data.length > 0 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError] : nil;
+
+            BOOL success = NO;
+            if ([json isKindOfClass:NSDictionary.class]) {
+                success = [json[@"success"] boolValue] || [json[@"active"] boolValue] || [json[@"valid"] boolValue] || [json[@"status"] isEqual:@"active"];
+            }
+
+            if (httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 && success) {
+                [[NSUserDefaults standardUserDefaults] setObject:apiKey forKey:BYANO_ACTIVATION_STORAGE_KEY];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+                self.statusLabel.text = json[@"message"] ?: @"تم تفعيل الكود بنجاح";
+                self.statusLabel.textColor = [UIColor colorWithRed:0.25 green:0.9 blue:0.5 alpha:1.0];
+                self.gpsSpoofSwitch.enabled = YES;
+                self.deviceIDSpoofSwitch.enabled = YES;
+                self.bluetoothSpoofSwitch.enabled = YES;
+                self.jsonHookSwitch.enabled = YES;
+                self.hideMenuButton.enabled = YES;
+
+                if (json[@"gps_enabled"]) self.gpsSpoofSwitch.on = [json[@"gps_enabled"] boolValue];
+                if (json[@"device_id_enabled"]) self.deviceIDSpoofSwitch.on = [json[@"device_id_enabled"] boolValue];
+                if (json[@"bluetooth_enabled"]) self.bluetoothSpoofSwitch.on = [json[@"bluetooth_enabled"] boolValue];
+                if (json[@"json_enabled"]) self.jsonHookSwitch.on = [json[@"json_enabled"] boolValue];
+            } else {
+                NSString *message = [json isKindOfClass:NSDictionary.class] ? json[@"message"] : nil;
+                self.statusLabel.text = message ?: [NSString stringWithFormat:@"فشل التفعيل (HTTP %ld)", (long)httpResponse.statusCode];
+                self.statusLabel.textColor = [UIColor colorWithRed:1 green:0.35 blue:0.35 alpha:1.0];
+            }
+        });
     }];
-    [dataTask resume];
+    [task resume];
 }
 
 - (void)hideMenuTapped {
-    // Dismiss the view controller to hide the menu
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
