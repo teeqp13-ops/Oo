@@ -1,14 +1,16 @@
-export ARCHS = arm64 arm64e
-export TARGET = iphone:clang:latest:14.0
+export ARCHS := arm64 arm64e
+export TARGET := iphone:clang:latest:14.0
+THEOS_PACKAGE_SCHEME ?= rootless
 
-INSTALL_TARGET_PROCESSES = SpringBoard
+INSTALL_TARGET_PROCESSES := SpringBoard
 
 include $(THEOS)/makefiles/common.mk
 
-TWEAK_NAME = BYANOTweak
+TWEAK_NAME := BYANOTweak
 
-BYANOTweak_FILES = Tweak.x BYANOMenuViewController.m
-BYANOTweak_FRAMEWORKS = UIKit Foundation CoreGraphics
-BYANOTweak_LDFLAGS = -L./ -lBYANO
+BYANOTweak_FILES := Tweak.x BYANOMenuViewController.m
+BYANOTweak_FRAMEWORKS := UIKit Foundation CoreGraphics
+BYANOTweak_CFLAGS := -fobjc-arc -Wall -Wextra -Wno-unused-parameter
+BYANOTweak_LDFLAGS := -Wl,-dead_strip
 
 include $(THEOS_MAKE_PATH)/tweak.mk
