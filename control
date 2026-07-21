@@ -1,0 +1,9 @@
+Package: com.yourname.byanotweak
+Name: BYANO Tweak
+Depends: mobilesubstrate
+Version: 1.0.0
+Architecture: iphoneos-arm
+Description: A custom menu for BYANO tool with API key activation.
+Maintainer: Manus AI
+Author: Manus AI
+Section: Tweaks
